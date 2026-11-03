@@ -1,84 +1,116 @@
-# Blog Frontend (React + Vite)
+# Blog Backend (Node.js + Express + MongoDB)
 
-Web UI for the Blog Management System: browse and search posts, read and comment, write, edit and publish posts, manage categories.
+REST API for the Blog Management System: authentication, posts (draft/publish), categories and comments.
 
 ## File structure
 
 ```
-frontend/
-├── index.html
+backend/
+├── .env.example            copy to .env and edit
 ├── package.json
 ├── README.md
-├── vite.config.js          dev server + /api proxy to port 5000
-└── src/
-    ├── api.js              axios instance (adds the login token)
-    ├── App.jsx             header, navigation, routes, route guards
-    ├── auth.jsx            login state shared across the app
-    ├── main.jsx            entry point + error screen
-    ├── pages.jsx           Home, PostPage, AuthPage, Dashboard, Editor, Categories
-    └── styles.css
+├── server.js               app entry: middleware, routes, MongoDB connection
+├── middleware/
+│   └── auth.js             JWT check: auth, optionalAuth, admin
+├── models/
+│   ├── Category.js
+│   ├── Comment.js
+│   ├── Post.js
+│   └── User.js
+├── routes/
+│   ├── auth.js             register, login, me
+│   ├── categories.js
+│   ├── comments.js
+│   └── posts.js
+└── utils/
+    └── slugify.js
 ```
 
-`node_modules/` is created by `npm install`. `dist/` is created by `npm run build`.
+`node_modules/` is created by `npm install`. `.env` is created by you.
 
 ## Requirements
 
 - Node.js 18 or newer
-- The backend running on `http://localhost:5000` (see `backend/README.md`)
+- MongoDB running locally, or a free MongoDB Atlas cluster
 
 ## Setup
 
 ```bash
-cd frontend
+cd backend
 npm install
-npm run dev
 ```
 
-Open **http://localhost:5173**. Do not double-click `index.html`; it only works through the dev server.
-
-In development, requests to `/api` are proxied to the backend (see `vite.config.js`), so no `.env` is needed.
-
-## Environment variable (optional)
-
-Create `frontend/.env` only if your API is on another address:
+Create a file named `.env` inside `backend/`:
 
 ```env
-VITE_API_URL=https://your-api-domain.com/api
+PORT=5000
+MONGO_URI=mongodb://127.0.0.1:27017/blog_system
+JWT_SECRET=replace_with_a_long_random_string_at_least_32_chars
+CLIENT_URL=http://localhost:5173
 ```
 
-Restart `npm run dev` after changing it. Never put secrets here; everything in this file is visible in the browser.
-
-## Production build
+Start the server:
 
 ```bash
-npm run build      # output in dist/
-npm run preview    # test the build locally
+npm run dev      # auto-restarts on changes (nodemon)
+npm start        # plain start
 ```
 
-Upload `dist/` to any static host, and set `CLIENT_URL` in the backend `.env` to the frontend's real address.
+Expected output: `API running on http://localhost:5000`
 
-## Pages
+## Environment variables
 
-| Route | Access | What it does |
-|---|---|---|
-| `/` | public | Published posts, search, category filter, pagination |
-| `/post/:slug` | public | Read a post, see and add comments |
-| `/login`, `/register` | public | Authentication (first user becomes admin) |
-| `/dashboard` | logged in | Your posts: edit, publish/unpublish, delete |
-| `/editor`, `/editor/:id` | logged in | Write or edit a post, save draft or publish |
-| `/categories` | admin | Add, rename, delete categories |
+| Name | Purpose |
+|---|---|
+| `PORT` | Server port (default 5000) |
+| `MONGO_URI` | MongoDB connection string (local or Atlas) |
+| `JWT_SECRET` | Secret used to sign login tokens. Keep it private |
+| `CLIENT_URL` | Frontend address allowed by CORS |
+
+Random secret generator: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+
+## Roles
+
+The first registered user becomes `admin`; everyone after is `author`.
+
+- Authors: create, edit, publish and delete their own posts.
+- Admins: everything, including categories and any post or comment.
+
+## Endpoints
+
+| Method | Path | Access | Description |
+|---|---|---|---|
+| POST | /api/auth/register | public | Create account |
+| POST | /api/auth/login | public | Log in, returns JWT |
+| GET | /api/auth/me | user | Current user |
+| GET | /api/posts?category=&q=&page=&limit= | public | Published posts |
+| GET | /api/posts/mine | user | My posts (admin: all) |
+| GET | /api/posts/id/:id | owner/admin | Post for editing |
+| GET | /api/posts/:slug | public | Single post (drafts: owner/admin) |
+| POST | /api/posts | user | Create post |
+| PUT | /api/posts/:id | owner/admin | Edit post |
+| PATCH | /api/posts/:id/publish | owner/admin | Toggle draft/published |
+| DELETE | /api/posts/:id | owner/admin | Delete post and its comments |
+| GET | /api/categories | public | List categories |
+| POST / PUT / DELETE | /api/categories(/:id) | admin | Manage categories |
+| GET | /api/posts/:postId/comments | public | List comments |
+| POST | /api/posts/:postId/comments | public | Add comment (guests send `name`) |
+| DELETE | /api/comments/:id | admin / post author | Remove comment |
+
+Send the token as `Authorization: Bearer <token>`.
+
+## Which `auth.js` is which?
+
+- `routes/auth.js`: the endpoints (register, login, me).
+- `middleware/auth.js`: the checker other routes run first (`auth`, `optionalAuth`, `admin`).
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| Blank page, error mentions `file:///` | You opened `index.html` directly. Use `npm run dev` and `http://localhost:5173` |
-| `React is not defined` | Each `.jsx` file with JSX must start with `import React from 'react';` |
-| `ERR_CONNECTION_REFUSED` on `localhost:5000` | The backend isn't running. Start it first |
-| Page shows "Cannot reach the API" | Same as above, or MongoDB isn't connected |
-| React Router "Future Flag Warning" | Harmless; ignore |
-| `favicon.ico 404` | Harmless; the site just has no tab icon |
-
-## Notes
-
-Post content is shown as plain text with line breaks kept, which avoids HTML injection. To support Markdown later, add `react-markdown` and render `post.content` with it.
+| `Cannot find module './routes/...'` | A file is missing or in the wrong folder. Compare with the structure above |
+| `MongoDB connection failed` | Start MongoDB, or fix `MONGO_URI` |
+| `EADDRINUSE ... :5000` | Port in use. Close the other process or change `PORT` |
+| `secretOrPrivateKey must have a value` | `.env` is missing or has no `JWT_SECRET` |
+| `.env` ignored on Windows | Make sure it isn't saved as `.env.txt` |
+| `nodemon app crashed` | Read the first red error above that line; type `rs` to restart after fixing |
